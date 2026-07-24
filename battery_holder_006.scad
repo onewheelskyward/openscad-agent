@@ -31,6 +31,11 @@
 // against pads, bridges, rod holes, and terminal lanes.
 //
 // Cell stack height now 71 + 2*2.6 = 76.2mm — M5 x 85 rods still fine.
+//
+// PRINT ORIENTATION (v2): pieces export weld-face-UP (pocket mouths on the
+// bed). v1 printed weld-face-down and the recessed weld face left the thin
+// floor bridging everywhere -> sagging/stringing that supports couldn't
+// reach. See printflip() below. Print with a brim; no supports needed.
 
 pattern = "A";     // "A" or "B"
 mode    = "sectioned";  // "full" | "sectioned" | "piece"
@@ -167,9 +172,12 @@ module pack_face(pattern) {
             // Cell pocket
             translate([p[0], p[1], floor_t])
                 cylinder(d=pocket_d, h=pocket_depth + 1);
-            // Entry chamfer
+            // Entry chamfer — small lead-in only. At full 28mm pitch a wide
+            // chamfer's rims overlap and shred the bed-side first layer
+            // (this is the pocket-mouth face, printed DOWN); +0.6 keeps a
+            // 0.5mm rim wall that extrudes cleanly.
             translate([p[0], p[1], plate_h - 1])
-                cylinder(d1=pocket_d, d2=pocket_d + 2.5, h=1.01);
+                cylinder(d1=pocket_d, d2=pocket_d + 0.6, h=1.01);
             // Weld-access opening
             translate([p[0], p[1], -1])
                 cylinder(d=weld_d, h=floor_t + 2);
@@ -237,8 +245,9 @@ module sectioned_face(pattern, sep=8) {
         translate([ci*sep, ri*sep, 0]) piece(pattern, cbs[ci], rbs[ri]);
 }
 
-// Print orientation: weld face down for both plates. A gets mirrored here
-// so it lands on the pack correctly after the assembly flip.
+// Assembly handedness: the hex lattice isn't mirror-symmetric, so the A
+// plate is modeled as a true mirror of the B-style geometry — this defines
+// the correct physical part, independent of how it's laid on the bed.
 module oriented(pattern) {
     if (pattern == "A")
         translate([plate_x, 0, 0]) mirror([1, 0, 0]) children();
@@ -246,9 +255,21 @@ module oriented(pattern) {
         children();
 }
 
+// PRINT ORIENTATION (v2, was weld-face-down): flip weld-face-UP so the
+// pocket mouths sit on the bed. The weld face carries almost all the
+// recessed detail (group pads, junctions, balance lanes); printed down it
+// left the 1.4mm floor bridging across those recesses everywhere, which
+// sagged into stringing — and supports can't reach a 1.2mm-tall both-ends-
+// anchored ceiling. Face-up, every recess is a clean top-surface pocket.
+// This is a rigid 180° flip about X, NOT a mirror, so oriented()'s A/B
+// handedness is unchanged. Only overhang left is the ~2.95mm floor ledge
+// over each pocket (self-supporting). Use a brim: bed contact is now the
+// pocket-wall honeycomb + solid frame, not a full face.
+module printflip() translate([0, plate_y, plate_h]) rotate([180, 0, 0]) children();
+
 module holder_face(pattern)               oriented(pattern) pack_face(pattern);
-module holder_sectioned(pattern, sep=8)   oriented(pattern) sectioned_face(pattern, sep);
-module holder_piece(pattern, ci, ri)      oriented(pattern)
+module holder_sectioned(pattern, sep=8)   printflip() oriented(pattern) sectioned_face(pattern, sep);
+module holder_piece(pattern, ci, ri)      printflip() oriented(pattern)
     piece(pattern, (pattern == "A" ? A_cb : B_cb)[ci],
                    (pattern == "A" ? A_rb : B_rb)[ri]);
 
